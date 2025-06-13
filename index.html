@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Compras de Casa</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Style for the custom file input */
+        .file-input-button {
+            cursor: pointer;
+            display: inline-block;
+        }
+        #importFile {
+            display: none;
+        }
+        /* Entry animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        /* Modal styles */
+        .modal {
+            position: fixed;
+            z-index: 100;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: auto;
+            padding: 24px;
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
+            width: 90%;
+            max-width: 500px;
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-2xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">Lista de Compras da Semana</h1>
+            <p class="text-slate-600 mt-2">Adicione seus produtos e veja o que comprar nos próximos 7 dias.</p>
+        </header>
+
+        <!-- Section to add new item -->
+        <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-semibold mb-4">Adicionar Novo Produto</h2>
+            <form id="addItemForm" class="grid grid-cols-1 sm:grid-cols-5 gap-4">
+                <input type="text" id="itemName" placeholder="Nome do produto" class="sm:col-span-3 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" required>
+                <input type="number" id="itemDays" placeholder="Dias para próxima compra" class="sm:col-span-2 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" required min="1">
+                <button type="submit" class="sm:col-span-5 w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition transform hover:scale-105">
+                    Adicionar Item
+                </button>
+            </form>
+        </div>
+
+        <!-- Weekly Checklist Section -->
+        <div class="bg-white p-6 rounded-xl shadow-md">
+            <h2 class="text-2xl font-semibold mb-4">Checklist da Semana</h2>
+            <p id="emptyMessage" class="text-slate-500">Nenhum item para comprar nos próximos 7 dias. Boas compras!</p>
+            <div id="checklist" class="space-y-3">
+                <!-- List items will be inserted here -->
+            </div>
+        </div>
+        
+        <!-- All Registered Items Section -->
+        <div class="bg-white p-6 rounded-xl shadow-md mt-8">
+            <h2 class="text-2xl font-semibold mb-4">Todos os Itens Cadastrados</h2>
+            <p id="emptyMasterMessage" class="text-slate-500 hidden">Nenhum item cadastrado ainda.</p>
+            <div id="masterList" class="space-y-3">
+                <!-- Master list items will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Import/Export Section -->
+        <div class="mt-8 p-4 bg-slate-200 rounded-xl">
+             <h3 class="text-lg font-semibold mb-4 text-center text-slate-700">Gerenciar Dados</h3>
+            <div class="flex justify-center items-center gap-4">
+                <button id="exportData" class="bg-green-600 text-white font-semibold py-2 px-5 rounded-lg hover:bg-green-700 transition">Exportar JSON</button>
+                <label for="importFile" class="file-input-button bg-purple-600 text-white font-semibold py-2 px-5 rounded-lg hover:bg-purple-700 transition">
+                    Importar JSON
+                </label>
+                <input type="file" id="importFile" accept=".json">
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Edit Item Modal -->
+    <div id="editItemModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-button" id="closeModalButton">&times;</span>
+            <h2 class="text-2xl font-semibold mb-4">Editar Produto</h2>
+            <form id="editItemForm" class="grid grid-cols-1 gap-4">
+                <input type="hidden" id="editItemId">
+                <div>
+                    <label for="editItemName" class="block text-sm font-medium text-slate-700">Nome do Produto</label>
+                    <input type="text" id="editItemName" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" readonly>
+                </div>
+                <div>
+                    <label for="editItemDays" class="block text-sm font-medium text-slate-700">Dias para Próxima Compra</label>
+                    <input type="number" id="editItemDays" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" required min="1">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition transform hover:scale-105">
+                    Salvar Alterações
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // --- DATABASE CONFIGURATION (INDEXEDDB) ---
+        let db;
+        const dbName = 'shoppingListDB';
+        const storeName = 'items';
+
+        const request = indexedDB.open(dbName, 1);
+
+        request.onerror = (event) => {
+            console.error("IndexedDB Error:", event.target.error);
+        };
+
+        request.onupgradeneeded = (event) => {
+            db = event.target.result;
+            if (!db.objectStoreNames.contains(storeName)) {
+                const objectStore = db.createObjectStore(storeName, { keyPath: 'id', autoIncrement: true });
+                objectStore.createIndex('name', 'name', { unique: false });
+                objectStore.createIndex('nextPurchaseDate', 'nextPurchaseDate', { unique: false });
+            }
+        };
+
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            // Renders both lists when the page loads
+            renderChecklist();
+            renderAllItemsList();
+        };
+        
+        // --- DATE MANIPULATION FUNCTIONS ---
+        function getDayWithoutTime(date = new Date()) {
+            const newDate = new Date(date);
+            newDate.setHours(0, 0, 0, 0);
+            return newDate;
+        }
+
+        // --- RENDERING FUNCTIONS ---
+
+        /**
+         * Renders the list of items that need to be purchased this week.
+         */
+        function renderChecklist() {
+            if (!db) return; 
+
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const getAllRequest = store.getAll();
+
+            const checklistDiv = document.getElementById('checklist');
+            const emptyMessage = document.getElementById('emptyMessage');
+            checklistDiv.innerHTML = ''; 
+
+            getAllRequest.onsuccess = () => {
+                const allItems = getAllRequest.result;
+                const today = getDayWithoutTime();
+                const sevenDaysFromNow = new Date(today);
+                sevenDaysFromNow.setDate(today.getDate() + 7);
+
+                const itemsToBuy = allItems.filter(item => {
+                    const nextPurchaseDate = new Date(item.nextPurchaseDate);
+                    return getDayWithoutTime(nextPurchaseDate) <= sevenDaysFromNow;
+                });
+                
+                itemsToBuy.sort((a,b) => new Date(a.nextPurchaseDate) - new Date(b.nextPurchaseDate));
+
+                if (itemsToBuy.length > 0) {
+                    emptyMessage.classList.add('hidden');
+                    itemsToBuy.forEach(createChecklistItemElement);
+                } else {
+                    emptyMessage.classList.remove('hidden');
+                }
+            };
+             getAllRequest.onerror = (event) => {
+                console.error("Error fetching items for checklist:", event.target.error);
+            };
+        }
+        
+        /**
+         * Renders the list of all registered items.
+         */
+        function renderAllItemsList() {
+            if (!db) return;
+
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const getAllRequest = store.getAll();
+
+            const masterListDiv = document.getElementById('masterList');
+            const emptyMasterMessage = document.getElementById('emptyMasterMessage');
+            masterListDiv.innerHTML = '';
+
+            getAllRequest.onsuccess = () => {
+                const allItems = getAllRequest.result;
+                
+                allItems.sort((a, b) => a.name.localeCompare(b.name));
+
+                if (allItems.length > 0) {
+                    emptyMasterMessage.classList.add('hidden');
+                    allItems.forEach(createMasterItemElement);
+                } else {
+                    emptyMasterMessage.classList.remove('hidden');
+                }
+            };
+             getAllRequest.onerror = (event) => {
+                console.error("Error fetching all items:", event.target.error);
+            };
+        }
+
+        /**
+         * Creates and adds an HTML element for an item in the weekly shopping list.
+         */
+        function createChecklistItemElement(item) {
+            const checklistDiv = document.getElementById('checklist');
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'fade-in flex items-center justify-between p-4 bg-slate-100 rounded-lg';
+            
+            const nextPurchaseDate = new Date(item.nextPurchaseDate);
+            const today = getDayWithoutTime();
+            const timeDiff = nextPurchaseDate.getTime() - today.getTime();
+            const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+            
+            let dateText = `Vence em ${daysDiff} dias (${nextPurchaseDate.toLocaleDateString('pt-BR')})`;
+            if (daysDiff === 0) {
+                dateText = `Vence hoje (${nextPurchaseDate.toLocaleDateString('pt-BR')})`;
+            } else if (daysDiff < 0) {
+                 dateText = `Vencido há ${Math.abs(daysDiff)} dias (${nextPurchaseDate.toLocaleDateString('pt-BR')})`;
+            }
+
+            itemDiv.innerHTML = `
+                <div>
+                    <p class="font-semibold text-lg">${item.name}</p>
+                    <p class="text-sm text-slate-600">${dateText}</p>
+                </div>
+                <button data-id="${item.id}" class="buy-button bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition">
+                    Comprar
+                </button>
+            `;
+            checklistDiv.appendChild(itemDiv);
+        }
+
+        /**
+         * Creates and adds an HTML element for an item in the master list.
+         */
+        function createMasterItemElement(item) {
+            const masterListDiv = document.getElementById('masterList');
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'fade-in flex items-center justify-between p-4 bg-slate-100 rounded-lg';
+
+            itemDiv.innerHTML = `
+                <div>
+                    <p class="font-semibold text-lg">${item.name}</p>
+                    <p class="text-sm text-slate-600">Comprar a cada ${item.frequency} dias</p>
+                </div>
+                <div class="flex gap-2">
+                    <button data-id="${item.id}" class="edit-button bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600 transition">
+                        Editar
+                    </button>
+                    <button data-id="${item.id}" class="delete-button bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition">
+                        Deletar
+                    </button>
+                </div>
+            `;
+            masterListDiv.appendChild(itemDiv);
+        }
+
+        // --- DATA MANIPULATION FUNCTIONS ---
+
+        /**
+         * Adds a new item to the database.
+         */
+        function addItem(event) {
+            event.preventDefault();
+            const name = document.getElementById('itemName').value.trim();
+            const days = parseInt(document.getElementById('itemDays').value);
+
+            if (!name || isNaN(days) || days <= 0) {
+                // Using a custom message box instead of alert()
+                showMessageBox('Por favor, preencha o nome e os dias corretamente.');
+                return;
+            }
+
+            const today = new Date();
+            const newItem = {
+                name: name,
+                frequency: days,
+                lastPurchaseDate: today.toISOString(),
+                nextPurchaseDate: new Date(today.setDate(today.getDate() + days)).toISOString()
+            };
+
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const addRequest = store.add(newItem);
+
+            addRequest.onsuccess = () => {
+                document.getElementById('addItemForm').reset();
+                renderChecklist();
+                renderAllItemsList();
+            };
+            addRequest.onerror = (event) => console.error("Error adding item:", event.target.error);
+        }
+
+        /**
+         * Marks an item as purchased, updating its next purchase date.
+         */
+        function markAsPurchased(itemId, button) {
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const getRequest = store.get(itemId);
+
+            getRequest.onsuccess = () => {
+                const item = getRequest.result;
+                if (!item) return;
+
+                const today = new Date();
+                item.lastPurchaseDate = today.toISOString();
+                // Recalculate nextPurchaseDate based on the item's current frequency
+                item.nextPurchaseDate = new Date(today.setDate(today.getDate() + item.frequency)).toISOString();
+
+                const updateRequest = store.put(item);
+
+                updateRequest.onsuccess = () => {
+                    button.textContent = 'Comprado';
+                    button.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                    button.classList.add('bg-red-500', 'cursor-not-allowed');
+                    button.disabled = true;
+
+                    setTimeout(() => renderChecklist(), 1500);
+                };
+                updateRequest.onerror = (event) => console.error("Error updating item:", event.target.error);
+            };
+            getRequest.onerror = (event) => console.error("Error fetching item for purchase:", event.target.error);
+        }
+        
+        /**
+         * Deletes an item from the database.
+         */
+        function deleteItem(itemId) {
+            // Using a custom confirmation box instead of confirm()
+            showConfirmBox('Tem certeza que deseja deletar este item?', () => {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const deleteRequest = store.delete(itemId);
+
+                deleteRequest.onsuccess = () => {
+                    renderChecklist();
+                    renderAllItemsList();
+                };
+                deleteRequest.onerror = (event) => console.error("Error deleting item:", event.target.error);
+            });
+        }
+
+        /**
+         * Opens the modal to edit an item.
+         */
+        function openEditModal(itemId) {
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const getRequest = store.get(itemId);
+
+            getRequest.onsuccess = () => {
+                const item = getRequest.result;
+                if (!item) return;
+
+                document.getElementById('editItemId').value = item.id;
+                document.getElementById('editItemName').value = item.name;
+                document.getElementById('editItemDays').value = item.frequency;
+                document.getElementById('editItemModal').classList.remove('hidden');
+            };
+            getRequest.onerror = (event) => console.error("Error fetching item for edit:", event.target.error);
+        }
+
+        /**
+         * Closes the edit item modal.
+         */
+        function closeEditModal() {
+            document.getElementById('editItemModal').classList.add('hidden');
+        }
+
+        /**
+         * Saves the edited item details to the database.
+         */
+        function saveEditedItem(event) {
+            event.preventDefault();
+            const itemId = parseInt(document.getElementById('editItemId').value);
+            const newDays = parseInt(document.getElementById('editItemDays').value);
+
+            if (isNaN(newDays) || newDays <= 0) {
+                // Using a custom message box instead of alert()
+                showMessageBox('Por favor, preencha o número de dias corretamente.');
+                return;
+            }
+
+            const transaction = db.transaction(storeName, 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const getRequest = store.get(itemId);
+
+            getRequest.onsuccess = () => {
+                const item = getRequest.result;
+                if (!item) return;
+
+                item.frequency = newDays;
+                // Recalculate nextPurchaseDate based on the new frequency and last purchase date
+                const lastPurchaseDate = new Date(item.lastPurchaseDate);
+                item.nextPurchaseDate = new Date(lastPurchaseDate.setDate(lastPurchaseDate.getDate() + newDays)).toISOString();
+
+                const updateRequest = store.put(item);
+
+                updateRequest.onsuccess = () => {
+                    closeEditModal();
+                    renderChecklist();
+                    renderAllItemsList();
+                };
+                updateRequest.onerror = (event) => console.error("Error saving edited item:", event.target.error);
+            };
+            getRequest.onerror = (event) => console.error("Error fetching item for save:", event.target.error);
+        }
+        
+        /**
+         * Exports all IndexedDB data to a JSON file.
+         */
+        function exportData() {
+            if (!db) return;
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const getAllRequest = store.getAll();
+
+            getAllRequest.onsuccess = () => {
+                const data = getAllRequest.result;
+                const jsonString = JSON.stringify(data, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `lista_compras_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+             getAllRequest.onerror = (event) => console.error("Error exporting data:", event.target.error);
+        }
+
+        /**
+         * Imports data from a JSON file, replacing existing data.
+         */
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (!Array.isArray(importedData)) throw new Error("Invalid JSON.");
+                    
+                    const transaction = db.transaction(storeName, 'readwrite');
+                    const store = transaction.objectStore(storeName);
+                    
+                    const clearRequest = store.clear();
+                    clearRequest.onsuccess = () => {
+                        importedData.forEach(item => {
+                            if(item.id) delete item.id;
+                            store.add(item);
+                        });
+                    };
+                    
+                    transaction.oncomplete = () => {
+                         renderChecklist();
+                         renderAllItemsList();
+                    }
+                    clearRequest.onerror = (event) => console.error("Error clearing database:", event.target.error);
+                } catch (error) {
+                    console.error("Error processing JSON file:", error);
+                    // Using a custom message box instead of alert()
+                    showMessageBox("Arquivo JSON inválido ou corrompido.");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = null;
+        }
+
+        /**
+         * Displays a custom message box.
+         * @param {string} message The message to display.
+         */
+        function showMessageBox(message) {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3 class="text-xl font-bold mb-4">Aviso</h3>
+                    <p>${message}</p>
+                    <button class="mt-6 bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition" onclick="this.closest('.modal').remove()">OK</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        /**
+         * Displays a custom confirmation box.
+         * @param {string} message The message to display.
+         * @param {function} onConfirm Callback function to execute if confirmed.
+         */
+        function showConfirmBox(message, onConfirm) {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <h3 class="text-xl font-bold mb-4">Confirmação</h3>
+                    <p>${message}</p>
+                    <div class="flex justify-end gap-4 mt-6">
+                        <button class="bg-gray-300 text-slate-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-400 transition" onclick="this.closest('.modal').remove()">Cancelar</button>
+                        <button class="bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 transition" id="confirmActionButton">Confirmar</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            document.getElementById('confirmActionButton').onclick = () => {
+                onConfirm();
+                modal.remove();
+            };
+        }
+
+
+        // --- EVENT LISTENERS ---
+        document.getElementById('addItemForm').addEventListener('submit', addItem);
+        document.getElementById('exportData').addEventListener('click', exportData);
+        document.getElementById('importFile').addEventListener('change', importData);
+
+        // Delegation of event for action buttons on lists
+        document.querySelector('.container').addEventListener('click', (event) => {
+            const button = event.target.closest('button');
+            if (!button) return; // Exit if the click was not on a button
+
+            const itemId = parseInt(button.dataset.id);
+
+            if (button.classList.contains('buy-button')) {
+                markAsPurchased(itemId, button);
+            }
+
+            if (button.classList.contains('delete-button')) {
+                deleteItem(itemId);
+            }
+
+            if (button.classList.contains('edit-button')) {
+                openEditModal(itemId);
+            }
+        });
+
+        document.getElementById('closeModalButton').addEventListener('click', closeEditModal);
+        document.getElementById('editItemForm').addEventListener('submit', saveEditedItem);
+
+        // Close modal when clicking outside
+        document.getElementById('editItemModal').addEventListener('click', (event) => {
+            if (event.target.id === 'editItemModal') {
+                closeEditModal();
+            }
+        });
+
+    </script>
+</body>
+</html>
