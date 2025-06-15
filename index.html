@@ -13,7 +13,7 @@
         }
         /* Animation for items entering the list */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
+            from { opacity: 0; transform: translateY(-10px); }\
             to { opacity: 1; transform: translateY(0); }
         }
         .fade-in {
@@ -288,8 +288,9 @@
 
             const itemsToDisplay = allItems.filter(item => {
                 const dueDate = getDayWithoutTime(item.dueDate);
-                // The item is due if its dueDate is less than or equal to `daysFromNow` AND it's not already overdue beyond today
-                return dueDate <= daysFromNow && dueDate >= today; 
+                // The item is due if its dueDate is less than or equal to `daysFromNow`.
+                // Removed `&& dueDate >= today` to include overdue items.
+                return dueDate <= daysFromNow;
             });
             
             itemsToDisplay.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
