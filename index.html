@@ -80,6 +80,20 @@
             </div>
         </div>
 
+        <!-- Import/Export Section -->
+        <div class="bg-white p-6 rounded-xl shadow-md mb-8">
+            <h2 class="text-2xl font-semibold mb-4">Gerenciamento de Dados</h2>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <button id="exportData" class="bg-green-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition transform hover:scale-105">
+                    <i class="fas fa-download mr-2"></i>Exportar Dados (JSON)
+                </button>
+                <input type="file" id="importFile" accept=".json" class="hidden" />
+                <button id="importData" class="bg-purple-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition transform hover:scale-105">
+                    <i class="fas fa-upload mr-2"></i>Importar Dados (JSON)
+                </button>
+            </div>
+        </div>
+
         <!-- Section to add a new item -->
         <div class="bg-white p-6 rounded-xl shadow-md mb-8">
             <h2 class="text-2xl font-semibold mb-4">Adicionar Novo Produto</h2>
@@ -154,6 +168,7 @@
         let simulatedDate = null; // Holds the string 'YYYY-MM-DD' of the simulated date
         // Default checklist days, loaded from localStorage or default to 7
         let checklistDisplayDays = parseInt(localStorage.getItem('checklistDays')) || 7; 
+        let lastId = 0; // To track the last ID for imported items
 
         const request = indexedDB.open(dbName, 1);
 
@@ -169,7 +184,22 @@
 
         request.onsuccess = (event) => {
             db = event.target.result;
-            initialize();
+            // Get the last ID from the database to continue auto-incrementing correctly
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const openCursorRequest = store.openCursor(null, 'prev');
+
+            openCursorRequest.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    lastId = cursor.value.id;
+                }
+                initialize();
+            };
+            openCursorRequest.onerror = (event) => {
+                console.error("Erro ao obter o último ID:", event.target.error);
+                initialize(); // Initialize even if there's an error getting the last ID
+            };
         };
 
         function initialize() {
@@ -352,6 +382,10 @@
             const addRequest = store.add(newItem);
 
             addRequest.onsuccess = () => {
+                // Update lastId with the new auto-incremented ID
+                if (addRequest.result > lastId) {
+                    lastId = addRequest.result;
+                }
                 document.getElementById('addItemForm').reset();
                 renderAllLists();
             };
@@ -427,6 +461,125 @@
                 };
             };
         }
+
+        // --- IMPORT/EXPORT FUNCTIONS ---
+
+        /**
+         * Exports all data from IndexedDB to a JSON file.
+         */
+        function exportData() {
+            if (!db) {
+                showAlert("Banco de dados não disponível.");
+                return;
+            }
+
+            const transaction = db.transaction(storeName, 'readonly');
+            const store = transaction.objectStore(storeName);
+            const getAllRequest = store.getAll();
+
+            getAllRequest.onsuccess = () => {
+                const data = JSON.stringify(getAllRequest.result, null, 2); // Pretty print JSON
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'vencimentos_data.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showAlert("Dados exportados com sucesso!");
+            };
+
+            getAllRequest.onerror = (event) => {
+                console.error("Erro ao exportar dados:", event.target.error);
+                showAlert("Erro ao exportar dados.");
+            };
+        }
+
+        /**
+         * Imports data from a JSON file into IndexedDB.
+         * Prompts for confirmation before clearing existing data.
+         */
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedItems = JSON.parse(e.target.result);
+
+                    // Validate imported data structure (basic check)
+                    if (!Array.isArray(importedItems) || !importedItems.every(item => item.name && item.dueDate)) {
+                        showAlert("Formato de arquivo JSON inválido. Certifique-se de que é uma lista de itens com 'name' e 'dueDate'.");
+                        return;
+                    }
+
+                    showConfirm('Importar dados substituirá todos os itens existentes. Deseja continuar?', () => {
+                        const transaction = db.transaction(storeName, 'readwrite');
+                        const store = transaction.objectStore(storeName);
+
+                        // Clear existing data
+                        const clearRequest = store.clear();
+                        clearRequest.onsuccess = () => {
+                            let importSuccessCount = 0;
+                            let newLastId = lastId; // Start newLastId from current lastId
+
+                            if (importedItems.length === 0) {
+                                showAlert("Nenhum item para importar.");
+                                renderAllLists();
+                                return;
+                            }
+
+                            importedItems.forEach(item => {
+                                // If the imported item has an 'id' and it's greater than current lastId, update lastId
+                                if (item.id && item.id > newLastId) {
+                                    newLastId = item.id;
+                                }
+
+                                // If the item does not have an ID, or if it has an ID
+                                // that is less than or equal to the current lastId, assign a new ID.
+                                // This prevents overwriting existing items if IDs conflict and ensures new IDs are unique.
+                                if (!item.id || item.id <= lastId) { // Check against original lastId to ensure uniqueness for new items
+                                    lastId++; // Increment global lastId
+                                    item.id = lastId; // Assign new ID to the imported item
+                                }
+
+                                const addRequest = store.add(item); // Use add to let IndexedDB assign new IDs if autoIncrement is true
+
+                                addRequest.onsuccess = () => {
+                                    importSuccessCount++;
+                                    if (importSuccessCount === importedItems.length) {
+                                        // Update global lastId after all items have been processed
+                                        lastId = newLastId > lastId ? newLastId : lastId; 
+                                        showAlert("Dados importados com sucesso!");
+                                        renderAllLists();
+                                    }
+                                };
+                                addRequest.onerror = (event) => {
+                                    console.error("Erro ao adicionar item importado:", event.target.error);
+                                    showAlert("Erro ao importar alguns itens. Verifique o console para detalhes.");
+                                    renderAllLists();
+                                };
+                            });
+                        };
+                        clearRequest.onerror = (event) => {
+                            console.error("Erro ao limpar dados existentes:", event.target.error);
+                            showAlert("Erro ao limpar dados existentes antes da importação.");
+                        };
+                    });
+
+                } catch (e) {
+                    console.error("Erro ao parsear JSON:", e);
+                    showAlert("Erro ao ler o arquivo JSON. Verifique se o formato está correto.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
 
         // --- TEST CONTROLS ---
 
@@ -526,6 +679,13 @@
         document.getElementById('editItemModal').addEventListener('click', (event) => {
             if (event.target.id === 'editItemModal') closeEditModal();
         });
+
+        // Event listeners for import/export buttons
+        document.getElementById('exportData').addEventListener('click', exportData);
+        document.getElementById('importData').addEventListener('click', () => {
+            document.getElementById('importFile').click(); // Trigger file input click
+        });
+        document.getElementById('importFile').addEventListener('change', importData);
 
     </script>
 </body>
