@@ -288,14 +288,15 @@
 
             const itemsToDisplay = allItems.filter(item => {
                 const dueDate = getDayWithoutTime(item.dueDate);
-                return dueDate <= daysFromNow;
+                // The item is due if its dueDate is less than or equal to `daysFromNow` AND it's not already overdue beyond today
+                return dueDate <= daysFromNow && dueDate >= today; 
             });
             
             itemsToDisplay.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate));
 
             if (itemsToDisplay.length > 0) {
                 emptyMessage.classList.add('hidden');
-                itemsToDisplay.forEach(item => createItemElement(item, checklistDiv));
+                itemsToDisplay.forEach(item => createItemElement(item, checklistDiv, true)); // Pass true for buy button in checklist
             } else {
                 emptyMessage.classList.remove('hidden');
                 // Update empty message to reflect current checklist days
@@ -312,13 +313,19 @@
 
             if (allItems.length > 0) {
                 emptyMasterMessage.classList.add('hidden');
-                allItems.forEach(item => createItemElement(item, masterListDiv));
+                allItems.forEach(item => createItemElement(item, masterListDiv, false)); // Pass false for no buy button in master list
             } else {
                 emptyMasterMessage.classList.remove('hidden');
             }
         }
         
-        function createItemElement(item, parentDiv) {
+        /**
+         * Creates and appends an item element to a given parent div.
+         * @param {Object} item - The item object from IndexedDB.
+         * @param {HTMLElement} parentDiv - The div to append the item element to.
+         * @param {boolean} showBuyButton - Whether to show the "Comprar" button.
+         */
+        function createItemElement(item, parentDiv, showBuyButton) {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'fade-in flex items-center justify-between p-4 bg-slate-100 rounded-lg';
             
@@ -350,8 +357,9 @@
                     <p class="text-sm ${textColor}">${dateText} (em ${formattedDueDate})</p>
                 </div>
                 <div class="flex gap-2">
-                    <button data-id="${item.id}" title="Editar" class="edit-button bg-yellow-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-yellow-600"><i class="fas fa-pencil-alt"></i></button>
-                    <button data-id="${item.id}" title="Deletar" class="delete-button bg-red-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-red-700"><i class="fas fa-trash-alt"></i></button>
+                    ${showBuyButton ? `<button data-id="${item.id}" title="Comprar" class="buy-button bg-blue-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-blue-700 transform hover:scale-105 transition"><i class="fas fa-shopping-cart mr-1"></i> Comprar</button>` : ''}
+                    ${!showBuyButton ? `<button data-id="${item.id}" title="Editar" class="edit-button bg-yellow-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-yellow-600"><i class="fas fa-pencil-alt"></i></button>` : ''}
+                    ${!showBuyButton ? `<button data-id="${item.id}" title="Deletar" class="delete-button bg-red-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-red-700"><i class="fas fa-trash-alt"></i></button>` : ''}
                 </div>
             `;
             parentDiv.appendChild(itemDiv);
@@ -374,7 +382,8 @@
             
             const newItem = { 
                 name: name, 
-                dueDate: formatDateToYMD(today) 
+                dueDate: formatDateToYMD(today),
+                originalDays: days // Store the original days to re-calculate next purchase date
             };
 
             const transaction = db.transaction(storeName, 'readwrite');
@@ -402,6 +411,52 @@
                 deleteRequest.onerror = (event) => console.error("Erro ao deletar item:", event.target.error);
             });
         }
+
+        /**
+         * Handles the "Comprar" action for an item.
+         * Deletes the item and re-adds it with an updated due date.
+         * @param {number} itemId - The ID of the item to "buy".
+         */
+        function buyItem(itemId) {
+            showConfirm('Confirmar compra? O item será removido do checklist e a próxima data de compra será atualizada.', () => {
+                const transaction = db.transaction(storeName, 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const getRequest = store.get(itemId);
+
+                getRequest.onsuccess = () => {
+                    const item = getRequest.result;
+                    if (!item) return;
+
+                    // Delete the old item
+                    const deleteRequest = store.delete(itemId);
+                    deleteRequest.onsuccess = () => {
+                        // Calculate new due date based on originalDays
+                        const newDueDate = getSystemDate();
+                        newDueDate.setDate(newDueDate.getDate() + item.originalDays);
+
+                        const newItem = { 
+                            name: item.name, 
+                            dueDate: formatDateToYMD(newDueDate),
+                            originalDays: item.originalDays
+                        };
+
+                        // Add the item back with the updated due date
+                        const addRequest = store.add(newItem);
+                        addRequest.onsuccess = () => {
+                            if (addRequest.result > lastId) {
+                                lastId = addRequest.result;
+                            }
+                            renderAllLists();
+                            showAlert(`"${item.name}" comprado e próxima data atualizada para ${newDueDate.toLocaleDateString('pt-BR')}.`);
+                        };
+                        addRequest.onerror = (event) => console.error("Erro ao readicionar item após compra:", event.target.error);
+                    };
+                    deleteRequest.onerror = (event) => console.error("Erro ao deletar item para compra:", event.target.error);
+                };
+                getRequest.onerror = (event) => console.error("Erro ao buscar item para compra:", event.target.error);
+            });
+        }
+
 
         function openEditModal(itemId) {
             const transaction = db.transaction(storeName, 'readonly');
@@ -453,6 +508,7 @@
 
                 item.name = name;
                 item.dueDate = formatDateToYMD(newDueDate);
+                item.originalDays = days; // Update originalDays as well
 
                 const updateRequest = store.put(item);
                 updateRequest.onsuccess = () => {
@@ -513,8 +569,8 @@
                     const importedItems = JSON.parse(e.target.result);
 
                     // Validate imported data structure (basic check)
-                    if (!Array.isArray(importedItems) || !importedItems.every(item => item.name && item.dueDate)) {
-                        showAlert("Formato de arquivo JSON inválido. Certifique-se de que é uma lista de itens com 'name' e 'dueDate'.");
+                    if (!Array.isArray(importedItems) || !importedItems.every(item => item.name && item.dueDate && item.originalDays !== undefined)) {
+                        showAlert("Formato de arquivo JSON inválido. Certifique-se de que é uma lista de itens com 'name', 'dueDate' e 'originalDays'.");
                         return;
                     }
 
@@ -673,6 +729,7 @@
             const itemId = parseInt(button.dataset.id);
             if (button.classList.contains('delete-button')) deleteItem(itemId);
             if (button.classList.contains('edit-button')) openEditModal(itemId);
+            if (button.classList.contains('buy-button')) buyItem(itemId); // New event listener for buy button
         });
         document.getElementById('closeModalButton').addEventListener('click', closeEditModal);
         document.getElementById('editItemForm').addEventListener('submit', saveEditedItem);
