@@ -12,7 +12,7 @@
             font-family: 'Inter', sans-serif;
         }
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
+            from { opacity: 0; transform: translateY(-10px); }\
             to { opacity: 1; transform: translateY(0); }
         }
         .fade-in {
@@ -365,6 +365,7 @@
                 </div>
                 <div class="flex gap-2 self-end sm:self-center">
                     ${showBuyButton ? `<button data-id="${item.id}" title="Comprar" class="buy-button bg-blue-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-blue-700 transform hover:scale-105 transition"><i class="fas fa-shopping-cart"></i></button>` : ''}
+                    ${!showBuyButton ? `<button data-id="${item.id}" title="Mover para Checklist" class="move-to-checklist-button bg-green-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-green-600"><i class="fas fa-list-check"></i></button>` : ''}
                     ${!showBuyButton ? `<button data-id="${item.id}" title="Editar" class="edit-button bg-yellow-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-yellow-600"><i class="fas fa-pencil-alt"></i></button>` : ''}
                     ${!showBuyButton ? `<button data-id="${item.id}" title="Deletar" class="delete-button bg-red-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-red-700"><i class="fas fa-trash-alt"></i></button>` : ''}
                 </div>
@@ -495,23 +496,37 @@
                 };
 
                 historyStore.add(purchaseRecord);
-                productsStore.delete(itemId);
                 
+                // Atualiza a data de vencimento do item para ser recontada a partir da compra
                 const newDueDate = getSystemDate();
                 newDueDate.setDate(newDueDate.getDate() + item.originalDays);
                 
-                const newItem = { 
-                    name: item.name, 
-                    quantidade: item.quantidade,
-                    valor: item.valor,
-                    dueDate: formatDateToYMD(newDueDate),
-                    originalDays: item.originalDays
-                };
-
-                productsStore.add(newItem);
+                item.dueDate = formatDateToYMD(newDueDate);
+                productsStore.put(item); 
                 
                 transaction.oncomplete = () => {
-                    showAlert(`"${item.name}" comprado e próxima data atualizada para ${newDueDate.toLocaleDateString('pt-BR')}.`);
+                    showAlert(`"${item.name}" comprado e data de vencimento atualizada para ${newDueDate.toLocaleDateString('pt-BR')}.`);
+                    renderAllData();
+                };
+            };
+        }
+
+        // Função modificada para Mover para Checklist
+        function moveToChecklist(itemId) {
+            const transaction = db.transaction(productsStoreName, 'readwrite');
+            const productsStore = transaction.objectStore(productsStoreName);
+            const getRequest = productsStore.get(itemId);
+
+            getRequest.onsuccess = () => {
+                const item = getRequest.result;
+                if (!item) return;
+
+                // Atualiza a data de vencimento do item existente para o dia atual
+                // Isso fará com que ele apareça na checklist sem criar uma duplicata.
+                item.dueDate = formatDateToYMD(getSystemDate()); 
+                
+                productsStore.put(item).onsuccess = () => {
+                    showAlert(`"${item.name}" teve a data de vencimento atualizada para hoje e aparecerá na checklist.`);
                     renderAllData();
                 };
             };
@@ -719,6 +734,8 @@
             if (button.classList.contains('delete-button')) deleteItem(itemId);
             if (button.classList.contains('edit-button')) openEditModal(itemId);
             if (button.classList.contains('buy-button')) buyItem(itemId);
+            // Novo event listener para o botão "Mover para Checklist"
+            if (button.classList.contains('move-to-checklist-button')) moveToChecklist(itemId);
         });
         document.getElementById('closeModalButton').addEventListener('click', closeEditModal);
         document.getElementById('editItemForm').addEventListener('submit', saveEditedItem);
