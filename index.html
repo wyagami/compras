@@ -12,7 +12,7 @@
             font-family: 'Inter', sans-serif;
         }
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }\
+            from { opacity: 0; transform: translateY(-10px); }
             to { opacity: 1; transform: translateY(0); }
         }
         .fade-in {
@@ -128,6 +128,14 @@
                  <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
                     <h2 class="text-2xl font-semibold">Checklist de Vencimentos</h2>
                     <div class="flex items-center gap-2">
+                        <!-- Share Buttons -->
+                        <button id="shareWhatsappButton" title="Compartilhar no WhatsApp" class="bg-green-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-green-600 transition transform hover:scale-105">
+                            <i class="fab fa-whatsapp"></i>
+                        </button>
+                        <button id="copyChecklistButton" title="Copiar para Área de Transferência" class="bg-slate-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-slate-600 transition transform hover:scale-105">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <span class="border-l border-slate-300 h-8 mx-2"></span>
                         <label for="checklistDays" class="font-medium text-slate-700 text-sm">Mostrar em (dias):</label>
                         <input type="number" id="checklistDays" value="7" min="1" class="p-2 w-20 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-center">
                     </div>
@@ -592,6 +600,66 @@
                 };
             };
         }
+        
+        // --- FUNÇÕES DE COMPARTILHAMENTO E CÓPIA ---
+        function getChecklistAsText() {
+            const checklistDiv = document.getElementById('checklist');
+            const items = checklistDiv.querySelectorAll('.fade-in');
+            const today = getSystemDate();
+            
+            if (items.length === 0) {
+                return "Nenhum item na lista de checklist no momento.";
+            }
+
+            let checklistText = `*Checklist de Compras - ${today.toLocaleDateString('pt-BR')}*\n\n`;
+
+            items.forEach(itemDiv => {
+                const name = itemDiv.querySelector('.font-semibold').textContent;
+                const details = itemDiv.querySelector('.text-sm.text-slate-500').textContent.trim();
+                const dueDateText = itemDiv.querySelector('p:nth-child(2)').textContent;
+                
+                const qtdMatch = details.match(/Qtd: ([\d,]+)/);
+                const quantity = qtdMatch ? qtdMatch[1] : 'N/A';
+
+                checklistText += `• ${name} (Qtd: ${quantity}) - ${dueDateText}\n`;
+            });
+
+            return checklistText;
+        }
+
+        function shareOnWhatsApp() {
+            const text = getChecklistAsText();
+            if (!text) return;
+            const encodedText = encodeURIComponent(text);
+            const url = `https://wa.me/?text=${encodedText}`;
+            window.open(url, '_blank');
+        }
+
+        function copyToClipboard() {
+            const textToCopy = getChecklistAsText();
+            if (!textToCopy) return;
+
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            textArea.style.position = "fixed";
+            textArea.style.top = "-9999px";
+            textArea.style.left = "-9999px";
+            
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                // Usando document.execCommand para maior compatibilidade, especialmente em iframes
+                document.execCommand('copy');
+                showAlert('Lista copiada para a área de transferência!');
+            } catch (err) {
+                showAlert('Ocorreu um erro ao tentar copiar a lista.');
+                console.error('Erro ao copiar:', err);
+            }
+
+            document.body.removeChild(textArea);
+        }
 
         // --- IMPORT/EXPORT ---
         function exportData() {
@@ -734,7 +802,6 @@
             if (button.classList.contains('delete-button')) deleteItem(itemId);
             if (button.classList.contains('edit-button')) openEditModal(itemId);
             if (button.classList.contains('buy-button')) buyItem(itemId);
-            // Novo event listener para o botão "Mover para Checklist"
             if (button.classList.contains('move-to-checklist-button')) moveToChecklist(itemId);
         });
         document.getElementById('closeModalButton').addEventListener('click', closeEditModal);
@@ -745,6 +812,8 @@
         document.getElementById('exportData').addEventListener('click', exportData);
         document.getElementById('importData').addEventListener('click', () => document.getElementById('importFile').click());
         document.getElementById('importFile').addEventListener('change', importData);
+        document.getElementById('shareWhatsappButton').addEventListener('click', shareOnWhatsApp);
+        document.getElementById('copyChecklistButton').addEventListener('click', copyToClipboard);
 
     </script>
 </body>
