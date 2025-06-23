@@ -146,7 +146,15 @@
             
             <!-- Todos os Itens Cadastrados -->
             <div class="bg-white p-6 rounded-xl shadow-md">
-                <h2 class="text-2xl font-semibold mb-4">Todos os Itens Cadastrados</h2>
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
+                    <h2 class="text-2xl font-semibold">Todos os Itens Cadastrados</h2>
+                    <div class="relative w-full sm:w-auto">
+                        <input type="text" id="masterListSearch" placeholder="Pesquisar itens..." class="w-full p-2 pl-10 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-search text-slate-400"></i>
+                        </div>
+                    </div>
+                </div>
                 <p id="emptyMasterMessage" class="text-slate-500 hidden">Nenhum item cadastrado ainda.</p>
                 <div id="masterList" class="space-y-3"></div>
             </div>
@@ -247,6 +255,7 @@
             updateCurrentTime();
             setInterval(updateCurrentTime, 1000);
             renderAllData();
+            setupMasterListSearch(); // Inicializa a função de busca
         }
         
         // --- FUNÇÕES DE DATA E HORA ---
@@ -292,7 +301,7 @@
             getAllProductsRequest.onsuccess = () => {
                 const allItems = getAllProductsRequest.result;
                 renderChecklist(allItems);
-                renderAllItemsList(allItems);
+                renderAllItemsList(allItems); // A função renderAllItemsList agora lida com o filtro
                 renderForecast(allItems);
             };
 
@@ -333,13 +342,21 @@
             const emptyMasterMessage = document.getElementById('emptyMasterMessage');
             masterListDiv.innerHTML = '';
 
-            allItems.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+            const searchTerm = document.getElementById('masterListSearch').value.toLowerCase();
 
-            if (allItems.length > 0) {
+            // Modificação: Filtrar por iniciais usando startsWith()
+            const filteredItems = allItems.filter(item => {
+                return item.name.toLowerCase().startsWith(searchTerm);
+            });
+
+            filteredItems.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+            if (filteredItems.length > 0) {
                 emptyMasterMessage.classList.add('hidden');
-                allItems.forEach(item => createItemElement(item, masterListDiv, false));
+                filteredItems.forEach(item => createItemElement(item, masterListDiv, false));
             } else {
                 emptyMasterMessage.classList.remove('hidden');
+                emptyMasterMessage.textContent = searchTerm ? `Nenhum item encontrado para "${searchTerm}".` : `Nenhum item cadastrado ainda.`;
             }
         }
         
@@ -372,10 +389,15 @@
                     </p>
                 </div>
                 <div class="flex gap-2 self-end sm:self-center">
-                    ${showBuyButton ? `<button data-id="${item.id}" title="Comprar" class="buy-button bg-blue-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-blue-700 transform hover:scale-105 transition"><i class="fas fa-shopping-cart"></i></button>` : ''}
-                    ${!showBuyButton ? `<button data-id="${item.id}" title="Mover para Checklist" class="move-to-checklist-button bg-green-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-green-600"><i class="fas fa-list-check"></i></button>` : ''}
-                    ${!showBuyButton ? `<button data-id="${item.id}" title="Editar" class="edit-button bg-yellow-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-yellow-600"><i class="fas fa-pencil-alt"></i></button>` : ''}
-                    ${!showBuyButton ? `<button data-id="${item.id}" title="Deletar" class="delete-button bg-red-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-red-700"><i class="fas fa-trash-alt"></i></button>` : ''}
+                    ${showBuyButton ? `
+                        <button data-id="${item.id}" title="Comprar" class="buy-button bg-blue-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-blue-700 transform hover:scale-105 transition"><i class="fas fa-shopping-cart"></i></button>
+                        <button data-id="${item.id}" title="Remover da Checklist" class="remove-from-checklist-button bg-red-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-red-700"><i class="fas fa-trash-alt"></i></button>
+                        <button data-id="${item.id}" title="Editar" class="edit-button bg-yellow-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-yellow-600"><i class="fas fa-pencil-alt"></i></button>
+                    ` : `
+                        <button data-id="${item.id}" title="Mover para Checklist" class="move-to-checklist-button bg-green-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-green-600"><i class="fas fa-list-check"></i></button>
+                        <button data-id="${item.id}" title="Editar" class="edit-button bg-yellow-500 text-white font-bold py-2 px-3 rounded-lg hover:bg-yellow-600"><i class="fas fa-pencil-alt"></i></button>
+                        <button data-id="${item.id}" title="Deletar" class="delete-button bg-red-600 text-white font-bold py-2 px-3 rounded-lg hover:bg-red-700"><i class="fas fa-trash-alt"></i></button>
+                    `}
                 </div>
             `;
             parentDiv.appendChild(itemDiv);
@@ -480,10 +502,32 @@
         }
         
         function deleteItem(itemId) {
-            showConfirm('Tem certeza que deseja deletar este item?', () => {
+            showConfirm('Tem certeza que deseja deletar este item permanentemente do cadastro?', () => {
                 const transaction = db.transaction(productsStoreName, 'readwrite');
                 transaction.objectStore(productsStoreName).delete(itemId);
                 transaction.oncomplete = () => renderAllData();
+            });
+        }
+
+        // Nova função para remover o item apenas da checklist
+        function removeItemFromChecklistDisplay(itemId) {
+            showConfirm('Tem certeza que deseja remover este item da checklist? Ele permanecerá no cadastro geral.', () => {
+                const transaction = db.transaction(productsStoreName, 'readwrite');
+                const productsStore = transaction.objectStore(productsStoreName);
+                const getRequest = productsStore.get(itemId);
+
+                getRequest.onsuccess = () => {
+                    const item = getRequest.result;
+                    if (!item) return;
+
+                    // Define a data de vencimento para uma data muito distante no futuro (ex: 2100-01-01)
+                    // Isso fará com que o item não apareça mais na checklist.
+                    item.dueDate = '2100-01-01'; 
+                    productsStore.put(item).onsuccess = () => {
+                        showAlert(`"${item.name}" removido da checklist.`);
+                        renderAllData();
+                    };
+                };
             });
         }
 
@@ -768,6 +812,16 @@
             });
         }
 
+        // --- FUNÇÕES DE BUSCA ---
+        function setupMasterListSearch() {
+            const masterListSearchInput = document.getElementById('masterListSearch');
+            masterListSearchInput.addEventListener('keyup', () => {
+                // Re-renderiza a lista mestre sempre que o usuário digita no campo de busca
+                // A função renderAllItemsList já inclui a lógica de filtro.
+                renderAllData(); 
+            });
+        }
+
         // --- MODAIS CUSTOMIZADOS ---
         function showAlert(message) {
             const modal = document.getElementById('customAlertModal');
@@ -799,7 +853,9 @@
             const button = event.target.closest('button');
             if (!button || !button.dataset.id) return;
             const itemId = parseInt(button.dataset.id);
-            if (button.classList.contains('delete-button')) deleteItem(itemId);
+            
+            if (button.classList.contains('delete-button')) deleteItem(itemId); // Para exclusão permanente do cadastro
+            if (button.classList.contains('remove-from-checklist-button')) removeItemFromChecklistDisplay(itemId); // Para remoção apenas da checklist
             if (button.classList.contains('edit-button')) openEditModal(itemId);
             if (button.classList.contains('buy-button')) buyItem(itemId);
             if (button.classList.contains('move-to-checklist-button')) moveToChecklist(itemId);
