@@ -489,7 +489,7 @@
                 quantidade: quantity,
                 valor: value,
                 dueDate: formatDateToYMD(today),
-                originalDays: days
+                originalDays: days // Armazena os dias originais
             };
 
             const transaction = db.transaction(productsStoreName, 'readwrite');
@@ -520,11 +520,13 @@
                     const item = getRequest.result;
                     if (!item) return;
 
-                    // Define a data de vencimento para uma data muito distante no futuro (ex: 2100-01-01)
-                    // Isso fará com que o item não apareça mais na checklist.
-                    item.dueDate = '2100-01-01'; 
+                    // Recalcula a data de vencimento com base nos dias originais a partir da data atual
+                    const newDueDate = getSystemDate();
+                    newDueDate.setDate(newDueDate.getDate() + (item.originalDays || 0)); // Usa originalDays ou 0 se não existir
+                    
+                    item.dueDate = formatDateToYMD(newDueDate); 
                     productsStore.put(item).onsuccess = () => {
-                        showAlert(`"${item.name}" removido da checklist.`);
+                        showAlert(`"${item.name}" removido da checklist e data de vencimento restaurada.`);
                         renderAllData();
                     };
                 };
@@ -599,7 +601,8 @@
                 document.getElementById('editItemName').value = item.name;
                 document.getElementById('editItemQuantity').value = item.quantidade || 1;
                 document.getElementById('editItemValue').value = item.valor || 0;
-                document.getElementById('editItemDays').value = Math.max(0, daysDiff);
+                // Ao abrir o modal de edição, exibe os dias originais se disponíveis, senão calcula a diferença
+                document.getElementById('editItemDays').value = item.originalDays !== undefined ? item.originalDays : Math.max(0, daysDiff);
                 document.getElementById('editItemModal').classList.remove('hidden');
             };
         }
@@ -636,8 +639,8 @@
                 item.quantidade = quantity;
                 item.valor = value;
                 item.dueDate = formatDateToYMD(newDueDate);
-                item.originalDays = days;
-
+                item.originalDays = days; // Atualiza originalDays ao salvar
+                
                 store.put(item).onsuccess = () => {
                     closeEditModal();
                     renderAllData();
@@ -755,6 +758,16 @@
                         historyStore.clear();
 
                         importedData.products.forEach(item => {
+                            // Garante que 'originalDays' seja importado ou definido
+                            if (item.originalDays === undefined && item.dueDate) {
+                                // Se originalDays não existe, tenta calcular a partir da dueDate e da data atual
+                                const itemDueDate = getDayWithoutTime(item.dueDate);
+                                const today = getDayWithoutTime(getSystemDate());
+                                const timeDiff = itemDueDate.getTime() - today.getTime();
+                                item.originalDays = Math.ceil(timeDiff / (1000 * 3600 * 24));
+                            } else if (item.originalDays === undefined) {
+                                item.originalDays = 0; // Valor padrão se não houver dueDate
+                            }
                             delete item.id;
                             productsStore.add(item);
                         });
